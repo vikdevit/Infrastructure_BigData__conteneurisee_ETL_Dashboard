@@ -1,0 +1,71 @@
+Création Conteneur Localstack 
+docker run --name localstack -d -p 4566:4566 -p 4510-4559:4510-4559 -e DOCKER_HOST=unix:///var/run/docker.sock localstack/localstack
+
+nc -zv localhost 4566
+Connection to localhost (127.0.0.1) 4566 port [tcp/*] succeeded!
+
+sudo apt install python3-pip
+
+sudo apt update
+
+sudo apt install unzip curl
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+aws --version
+aws-cli/2.23.6 Python/3.12.6 Linux/6.8.0-51-generic exe/x86_64.ubuntu.24
+aws configure
+AWS Access Key ID [None]: test
+AWS Secret Access Key [None]: test
+Default region name [None]: us-east-1
+Default output format [None]: 
+aws --endpoint-url=http://localhost:4566 s3 mb s3://nom-du-bucket
+aws --endpoint-url=http://localhost:4566 s3 lsaws --endpoint-url=http://localhost:4566 rm s3://nom-du-bucket (rm pour contenu et rb pour supprimer bucket)
+aws --endpoint-url=http://localhost:4566 s3 cp s3://test-bucket/example.json ./
+pour telecharger du bucket vers répertoire courant du temrinal ?
+aws --endpoint-url=http://172.17.0.2:4566 s3 cp s3://aviationstack/ ./ --recursive
+pour uploader vers bucket 
+aws --endpoint-url=http://localhost:4566 s3 cp /chemin/vers/fichier s3://nom-du-bucket/
+
+
+Réseau conteneur localstack (docker inspect localstack)
+ "Networks": {
+                "bridge": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "02:42:ac:11:00:02",
+                    "DriverOpts": null,
+                    "NetworkID": "95605c8e437d9c46f378ca7c87e7e7b7ffcd1478be442df9afaf77997dfb648e",
+                    "EndpointID": "a2c05d8ecf9568f515b89bd729aef326655aea1eed60ebeb7123abc4349ea66e",
+                    "Gateway": "172.17.0.1",
+                    "IPAddress": "172.17.0.2",
+                    "IPPrefixLen": 16,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+
+
+Configuration machine linux sous virtual box avec accès par pont pour que le conteneur localstack soit accessible depuis Talend sous windows.
+puis ip addr show sous le terminal linux pour trouver adresse IP sous enp0s3 => 192.168.1.21 puis test sous windows powershell avec ping 192.168.1.21 puis docker ps pour vérigier que port 4566 du conteneur localstack est exposé => 0.0.0.0:4566->4566/tcp puis sous Powershell en mode administrateur faire : curl http://192.168.1.21:4566 => code 200 OK => Talend sous windows peut envoyer le json vers le conteneur localstack sous linux.
+En revanche, l'adresse ip locale du conteneur localstack est celle indiquée en faisant docker inspect localstack dans rubrique Networks, bridge, gate http://172.17.0.2  pour faire ensuite par exemple 
+aws --endpoint-url=http://172.17.0.2:4566 s3 mb s3://nom-du-bucket
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
