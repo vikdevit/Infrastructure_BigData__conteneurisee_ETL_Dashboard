@@ -1,0 +1,45 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.6.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node        # Mode single-node
+      - xpack.security.enabled=false      # Désactive la sécurité (pas de mot de passe)
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data  # Volume persistant pour les données d'Elasticsearch
+    ports:
+      - "9200:9200"
+    networks:
+      - elastic
+    restart: always
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.6.0
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200  # Connexion à Elasticsearch
+      - xpack.security.enabled=false  # Désactive la sécurité dans Kibana (pas de mot de passe)
+    volumes:
+      - kibana_data:/usr/share/kibana/data  # Volume persistant pour les données de Kibana (dashboards, visualisations, etc.)
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch  # Kibana attend qu'Elasticsearch soit prêt avant de démarrer
+    networks:
+      - elastic
+    restart: always
+
+volumes:
+  elasticsearch_data:
+    driver: local
+  kibana_data:
+    driver: local
+
+networks:
+  elastic:
+    driver: bridge
+
