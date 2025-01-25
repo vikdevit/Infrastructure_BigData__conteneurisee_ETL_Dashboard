@@ -1,0 +1,5 @@
+Commandes data-warehouse
+docker compose up -d
+docker compose ps (pour verifier si en marche)
+docker compose down (avec conservation des données car volumes non supprimés)
+redémarrer : docker compose up -d

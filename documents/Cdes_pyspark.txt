@@ -1,0 +1,6 @@
+démarrer conteneur avec docker run et afficher les logs
+docker run --rm -it pyspark-image
+--rm : Supprime le conteneur une fois qu'il a terminé l'exécution.
+-it : Exécute le conteneur de manière interactive et vous permet de suivre l'exécution dans le terminal
+
+
