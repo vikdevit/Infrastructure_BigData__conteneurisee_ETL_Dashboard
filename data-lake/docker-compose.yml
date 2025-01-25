@@ -1,0 +1,77 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.1
+    container_name: zookeeper
+    ports:
+      - "2181:2181"          
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - kafka_network    
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.1
+    container_name: kafka
+    ports:
+      - "9092:9092"
+        # networks:
+        # - kafka_network    
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092  
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    networks:
+      - kafka_network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566" # Main LocalStack port
+      - "4572:4572" # Port S3 (optionnel, dépend de votre configuration)
+      - "4510-4559:4510-4559"
+      - "4571:4571" # Optional edge services
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://172.17.0.1:4566
+      - SERVICES=s3
+      - PERSISTENCE=1   
+    volumes:
+      - ./localstack-data:/var/lib/localstack:rw # Monte un volume pour persister les données
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - kafka_network
+        # restart: always          
+
+  scrap:
+    build:
+      context: .
+    container_name: scrap
+    depends_on:
+      - kafka
+      # - localstack  
+    volumes:
+      - ./script:/app/script   
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET_NAME: openskytrax
+      LOCALSTACK_URL: http://172.17.0.1:4566
+    networks:
+      - kafka_network
+    restart: always    
+
+networks:
+  kafka_network:
+    driver: bridge  
+
+volumes:
+  localstack-data:
+    driver: local  

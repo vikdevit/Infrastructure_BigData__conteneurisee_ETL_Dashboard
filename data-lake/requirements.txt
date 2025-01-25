@@ -1,0 +1,5 @@
+beautifulsoup4
+requests
+confluent-kafka
+boto3
+
