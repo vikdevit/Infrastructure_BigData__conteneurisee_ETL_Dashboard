@@ -19,15 +19,15 @@ s3_client = boto3.client('s3',
 # Téléchargement du fichier JSON depuis le bucket S3 simulé
 bucket_name = 'aviationstack'
 json_file_key = 'aviation-data.json'  # Nom du fichier dans le bucket S3 (pas de répertoire)
-json_file_path = '/app/aviation-data.json'  # Chemin local dans le conteneur Docker"""
+json_file_path = '/app/aviation-data.json'  # Chemin local dans le conteneur Docker
 
-vk_bucket = 'openskytrax'
+"""vk_bucket = 'bucketvk'
 vk_json_file = 'opensky_data.json'
-vk_local_path = '/app/opensky_data.json'
+vk_local_path = '/opensky_data.json'"""
 
 # Télécharger le fichier S3 dans le conteneur local
 s3_client.download_file(bucket_name, json_file_key, json_file_path)
-s3_client.download_file(vk_bucket, vk_json_file, vk_local_path)
+#s3_client.download_file(vk_bucket, vk_json_file, vk_local_path)
 
 # Créer une session Spark
 spark = SparkSession.builder \
@@ -169,11 +169,11 @@ valid_flights = flights_with_coords.filter(
 )
 
 # Afficher les lignes validées avant l'indexation
-#valid_flights.show(truncate=False)"""
+#valid_flights.show(truncate=False)
 
 # Configurer Elasticsearch
 es = Elasticsearch(["http://172.17.0.1:9200"])   
-index_name = "aviation_data_0_2701_index"
+index_name = "aviation_data_0_2501_index"
 mapping = {
     "mappings": {
         "properties": {
@@ -222,17 +222,16 @@ es_bulk_data = valid_flights.rdd.map(generate_bulk_data).collect()
 success, failed = bulk(es, es_bulk_data)
 print(f"Successfully indexed: {success}, Failed: {failed}")
 
-# ---- 2. Traitement du fichier opensky_data.json ----
+"""# ---- 2. Traitement du fichier opensky_data.json ----
 vk_df = spark.read.option("multiline", "true").json(vk_local_path)
 
 states_cleaned = vk_df.select(
     col("icao24").alias("icao24"),  # ICAO24
     col("origin_country").alias("origin_country"),  # Origin country
-    from_unixtime(col("time_position")).alias("time_position_date"),  # Convertir en date type text sinon faire to_timestamp(col("time_position")).alias("time_position_date") pour type date
+    from_unixtime(col("time_position")).alias("time_position_date"),  # Convertir en date
     col("longitude").alias("longitude"),  # Longitude
     col("latitude").alias("latitude"),  # Latitude
-    concat_ws(",", col("latitude"), col("longitude")).alias("geopoint"),  # Créer une colonne GeoPoint
-    date_format(from_unixtime(col("time_position")), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").alias("timestamp")  # Colonne compatible Elasticsearch
+    concat_ws(",", col("latitude"), col("longitude")).alias("geopoint")  # Créer une colonne GeoPoint
 )
 
 # Ajouter un UUID unique
@@ -246,14 +245,10 @@ valid_states_cleaned = states_cleaned.filter(
     (col("time_position_date").isNotNull()) &     # Vérifie la latitude d'arrivée
     (col("longitude").isNotNull()) &   # Vérifie la latitude de départ
     (col("latitude").isNotNull()) &  # Vérifie la longitude de départ
-    (col("geopoint").isNotNull()) &      # Vérifie la latitude d'arrivée
-    (col("timestamp").isNotNull())
+    (col("geopoint").isNotNull())      # Vérifie la latitude d'arrivée
 )
 
-# Afficher les lignes validées avant l'indexation
-valid_states_cleaned.show(5)
-
-index_name_2 = "opensky_data_0_2701_index" 
+index_name_2 = "opensky_data_22_index"
 mapping_2 = {
     "mappings": {
         "properties": {
@@ -280,8 +275,7 @@ def generate_bulk_data_2(row):
             "time_position_date": row.time_position_date,
             "longitude": row.longitude,
             "latitude": row.latitude,
-            "geopoint": row.geopoint,
-            "timestamp": row.timestamp
+            "geopoint": row.geopoint
         }
     }
     return action
@@ -291,7 +285,7 @@ es_bulk_data_2 = valid_states_cleaned.rdd.map(generate_bulk_data_2).collect()
 
 # Envoyer les données à Elasticsearch via bulk
 success, failed = bulk(es, es_bulk_data_2)
-print(f"Successfully indexed: {success}, Failed: {failed}")
+print(f"Successfully indexed: {success}, Failed: {failed}")"""
 
 # Stop Spark session
 spark.stop()
