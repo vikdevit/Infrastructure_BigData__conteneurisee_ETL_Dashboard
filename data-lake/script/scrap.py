@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 from confluent_kafka import Producer, Consumer, KafkaException, KafkaError
 import boto3
 import json
-import time
 
 # Configuration du Kafka
 KAFKA_TOPIC = 'aviation_data'
@@ -19,13 +18,11 @@ def scrape_skytrax():
     url = "https://skytraxratings.com/a-z-of-airline-ratings"
     response = requests.get(url)
     if response.status_code == 200:
-        print("Page récupérée avec succès!")   
         soup = BeautifulSoup(response.text, 'html.parser')
-        
         table = soup.find('table', {'id': 'tablepress-1'})
         if table:
-            print("Table trouvée!")
             tbody = table.find('tbody')
+
             if tbody:
                 rows = tbody.find_all('tr')
                 resultats = []
@@ -38,25 +35,24 @@ def scrape_skytrax():
                         stars_text = column1.get_text(strip=True)
                         if stars_text.isdigit():
                             stars = int(stars_text)
-                    
                     column2 = row.find('td', class_='column-2')
                     if column2:
                         link = column2.find('a')
                         airline_name = link.text.strip() if link else ""
-                        
+                        airline_url = link['href'] if link and 'href' in link.attrs else ""
                     if airline_name:
-                        resultats.append({"Airline": airline_name, "Stars": stars})
+                        resultats.append({"Airline": airline_name, "Stars": stars, "URL": airline_url})
                 return resultats
     return []
 
 # Fonction pour récupérer les données OpenSky
-def fetch_opensky_data(limit=10):
+def fetch_opensky_data():
     url = "https://opensky-network.org/api/states/all"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        print(f"OpenSky Data Récupérées: {json.dumps(data, indent=4)}")  # Log de ce qui est récupéré
-        states = data.get("states", [])
+        # Limite à 50 premiers états
+        states = data.get("states", [])[:50]  # On prend seulement les 50 premiers états
         resultats = []
         for state in states:
             resultats.append({
@@ -76,7 +72,6 @@ def fetch_opensky_data(limit=10):
                 "squawk": state[13] if len(state) > 13 else None,
                 "spi": state[14] if len(state) > 14 else None,
             })
-        print(f"Résultats OpenSky : {json.dumps(resultats, indent=4)}")  # Log des données traitées
         return resultats
     else:
         print(f"Erreur lors de la récupération des données OpenSky. Code HTTP: {response.status_code}")
@@ -88,13 +83,12 @@ def send_to_kafka(producer, data, source):
         print(f"Aucune donnée à envoyer à Kafka depuis {source}")
     else:
         try:
-            print(f"Envoi des données à Kafka depuis {source}: {json.dumps(data, indent=4)}")  # Log des données envoyées
+            print(f"Envoi des données à Kafka depuis {source}")
             producer.produce(KAFKA_TOPIC, key=source, value=json.dumps(data))
             producer.flush()
             print(f"Données envoyées avec succès au topic {KAFKA_TOPIC} depuis {source}")
         except KafkaException as e:
             print(f"Erreur Kafka lors de l'envoi des données : {e}")
-            print(f"Données ayant causé l'erreur : {json.dumps(data, indent=4)}")
 
 # Fonction pour consommer les données depuis Kafka et les envoyer vers S3
 def consume_from_kafka_and_send_to_s3(consumer):
@@ -114,22 +108,21 @@ def consume_from_kafka_and_send_to_s3(consumer):
             else:
                 source = msg.key().decode('utf-8')  # Récupérer la source (Skytrax ou OpenSky)
                 data = json.loads(msg.value().decode('utf-8'))
-                print(f"Message reçu de {source}: {json.dumps(data, indent=4)}")  # Log du message reçu
+                print(f"Message reçu de {source}: {json.dumps(data, indent=4)}")
 
                 try:
                     if source == "Skytrax":
-                        key = f"skytrax_data_{int(time.time())}.json"
+                        key = "skytrax_data.json"
                     elif source == "OpenSky":
-                        key = f"opensky_data_{int(time.time())}.json"
+                        key = "opensky_data.json"
                     else:
-                        key = f"unknown_data_{int(time.time())}.json"
+                        key = f"unknown_data.json"
                     
-                    print(f"Tentative de sauvegarde dans S3 avec la clé : {key}")
+                    # Sauvegarde dans S3
                     s3.put_object(Bucket=S3_BUCKET_NAME, Key=key, Body=json.dumps(data))
                     print(f"Données sauvegardées avec succès dans le bucket {S3_BUCKET_NAME} avec la clé {key}")
                 except Exception as s3_error:
                     print(f"Erreur lors de la sauvegarde dans S3 : {s3_error}")
-                    print(f"Données ayant causé l'erreur : {json.dumps(data, indent=4)}")
     except KafkaException as e:
         print(f"Erreur Kafka lors de la consommation : {e}")
 
@@ -138,26 +131,22 @@ if __name__ == "__main__":
     try:
         print("Initialisation du producteur Kafka...")
         producer = Producer({'bootstrap.servers': KAFKA_BROKER})
-        print("Producteur Kafka initialisé avec succès.")
 
         print("Initialisation du consommateur Kafka...")
         consumer = Consumer({'bootstrap.servers': KAFKA_BROKER, 'group.id': 'aviation_group', 'auto.offset.reset': 'earliest'})
-        print("Consommateur Kafka initialisé avec succès.")
 
         # Scraper les données Skytrax
         print("Démarrage du scraping des données Skytrax...")
         scraped_data = scrape_skytrax()
-        print("Scraping terminé, données extraites.")
-        
+
         # Récupérer les données OpenSky
         print("Récupération des données OpenSky...")
         opensky_data = fetch_opensky_data()
-        print("Données OpenSky récupérées.")
 
         # Envoyer les données à Kafka
         print("Envoi des données Skytrax à Kafka...")
         send_to_kafka(producer, scraped_data, source="Skytrax")
-        
+
         print("Envoi des données OpenSky à Kafka...")
         send_to_kafka(producer, opensky_data, source="OpenSky")
 
@@ -167,5 +156,4 @@ if __name__ == "__main__":
 
     except Exception as main_error:
         print(f"Erreur dans le script principal : {main_error}")
-
 
