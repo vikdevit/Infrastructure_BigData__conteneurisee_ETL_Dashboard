@@ -6,6 +6,8 @@ import json
 import uuid
 from pyspark.sql.types import StringType
 
+import datetime  # Ajoutez cette ligne pour importer le module datetime
+
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
@@ -17,17 +19,23 @@ s3_client = boto3.client('s3',
                          region_name='us-east-1')
 
 # Téléchargement du fichier JSON depuis le bucket S3 simulé
-bucket_name = 'aviationstack'
-json_file_key = 'aviation-data.json'  # Nom du fichier dans le bucket S3 (pas de répertoire)
-json_file_path = '/app/aviation-data.json'  # Chemin local dans le conteneur Docker"""
+bucket_name_1 = 'aviationstack'
+json_file_key_1 = 'aviation-data.json'  # Nom du fichier dans le bucket S3 (pas de répertoire)
+json_file_path_1 = '/app/aviation-data.json'  # Chemin local dans le conteneur Docker"""
 
-vk_bucket = 'openskytrax'
-vk_json_file = 'opensky_data.json'
-vk_local_path = '/app/opensky_data.json'
+bucket_name_2 = 'openskytrax'
+json_file_key_2 = 'opensky_data.json'
+json_file_path_2 = '/app/opensky_data.json'
+
+bucket_name_2 = 'openskytrax'
+json_file_key_3 = 'skytrax_data.json'
+json_file_path_3 = '/app/skytrax_data.json'
+
 
 # Télécharger le fichier S3 dans le conteneur local
-s3_client.download_file(bucket_name, json_file_key, json_file_path)
-s3_client.download_file(vk_bucket, vk_json_file, vk_local_path)
+s3_client.download_file(bucket_name_1, json_file_key_1, json_file_path_1)
+s3_client.download_file(bucket_name_2, json_file_key_2, json_file_path_2)
+s3_client.download_file(bucket_name_2, json_file_key_3, json_file_path_3)
 
 # Créer une session Spark
 spark = SparkSession.builder \
@@ -35,7 +43,7 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # Charger le fichier JSON en DataFrame, en ignorant la clé "pagination"
-df = spark.read.option("multiline","true").json(json_file_path)
+df = spark.read.option("multiline","true").json(json_file_path_1)
 
 # Explosion de 'data' pour créer une ligne par entrée
 df_exploded = df.select(explode(col("data")).alias("flight_info"))
@@ -113,22 +121,6 @@ flights_with_coords = flights_with_coords.withColumn("departure_hour", hour("dep
 flights_with_coords = flights_with_coords.withColumn("flight_duration_minutes", 
                    (col("arrival_scheduled").cast("long") - col("departure_scheduled").cast("long")) / 60)
 
-# Analyser les vols par compagnie aérienne
-"""flights_with_coords = flights_with_coords.withColumn("airline_count", 
-                   count("airline_name").over(Window.partitionBy("airline_name")))"""
-
-# Analyser les vols par aéroport de départ
-"""flights_with_coords = flights_with_coords.withColumn("departure_airport_count", 
-                   count("departure_airport").over(Window.partitionBy("departure_airport")))"""
-
-# Analyser les vols par aéroport d'arrivée
-"""flights_with_coords = flights_with_coords.withColumn("arrival_airport_count", 
-                   count("arrival_airport").over(Window.partitionBy("arrival_airport")))"""
-
-# Extraire le fuseau horaire de départ et d'arrivée
-"""flights_with_coords = flights_with_coords.withColumn("departure_timezone", col("departure_timezone")) \
-       .withColumn("arrival_timezone", col("arrival_timezone"))"""
-
 # Générer un UUID unique pour chaque ligne
 def generate_uuid():
     return str(uuid.uuid4())
@@ -142,17 +134,17 @@ flights_with_coords = flights_with_coords.withColumn("flight_date", date_format(
 
 # Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont NULL
 valid_flights = flights_with_coords.filter(
-    (col("departure_latitude").isNotNull()) &   # Vérifie la latitude de départ
-    (col("departure_longitude").isNotNull()) &  # Vérifie la longitude de départ
-    (col("arrival_latitude").isNotNull()) &     # Vérifie la latitude d'arrivée
-    (col("arrival_longitude").isNotNull()) &    # Vérifie la longitude d'arrivée
-    (col("departure_geopoint").isNotNull()) &   # Vérifie le géopoint de départ
-    (col("arrival_geopoint").isNotNull()) &     # Vérifie le géopoint d'arrivée
-    (col("flight_date").isNotNull()) &          # Vérifie la date de vol # Vérifie le statut du vol
-    (col("flight_number").isNotNull()) &        # Vérifie le numéro du vol
-    (col("airline_name").isNotNull()) &         # Vérifie le nom de la compagnie aérienne
-    (col("departure_iata").isNotNull()) &       # Vérifie l'IATA du départ
-    (col("arrival_iata").isNotNull()) &           # Vérifie l'IATA d'arrivée
+    (col("departure_latitude").isNotNull()) &   
+    (col("departure_longitude").isNotNull()) & 
+    (col("arrival_latitude").isNotNull()) &     
+    (col("arrival_longitude").isNotNull()) &   
+    (col("departure_geopoint").isNotNull()) &  
+    (col("arrival_geopoint").isNotNull()) &     
+    (col("flight_date").isNotNull()) &          
+    (col("flight_number").isNotNull()) &        
+    (col("airline_name").isNotNull()) &         
+    (col("departure_iata").isNotNull()) &       
+    (col("arrival_iata").isNotNull()) &           
     (col("departure_scheduled").isNotNull()) &
     (col("departure_airport").isNotNull()) &
     (col("departure_timezone").isNotNull()) &
@@ -165,15 +157,13 @@ valid_flights = flights_with_coords.filter(
     (col("arrival_day").isNotNull()) &
     (col("departure_hour").isNotNull()) &
     (col("arrival_hour").isNotNull()) &
-    (col("flight_duration_minutes").isNotNull())
+    (col("flight_duration_minutes").isNotNull()) &
+    (col("flight_duration_minutes") > 0)
 )
-
-# Afficher les lignes validées avant l'indexation
-#valid_flights.show(truncate=False)"""
 
 # Configurer Elasticsearch
 es = Elasticsearch(["http://172.17.0.1:9200"])   
-index_name = "aviation_data_0_2701_index"
+index_name = "viken_khatch_m2i_cdsd_bloc1_aviationstack"
 mapping = {
     "mappings": {
         "properties": {
@@ -196,7 +186,7 @@ def generate_bulk_data(row):
         "_index": index_name,
         "_id": row.unique_id,
         "_source": {
-            "flight_date": row.flight_date,       #"flight_status": row.flight_status,
+            "flight_date": row.flight_date,      
             "flight_number": row.flight_number,
             "flight_iata": row.flight_iata,
             "airline_name": row.airline_name,
@@ -208,8 +198,8 @@ def generate_bulk_data(row):
             "arrival_scheduled": row.arrival_scheduled,
             "departure_hour": row.departure_hour,
             "arrival_hour" : row.arrival_hour,
-            "flight_duration_minutes": row.flight_duration_minutes,  #"departure_airport_count": row.departure_airport_count,
-            "departure_timezone": row.departure_timezone,  #"arrival_airport_count": row.arrival_airport_count,
+            "flight_duration_minutes": row.flight_duration_minutes,  
+            "departure_timezone": row.departure_timezone, 
             "arrival_timezone": row.arrival_timezone   
         }
     }
@@ -223,15 +213,21 @@ success, failed = bulk(es, es_bulk_data)
 print(f"Successfully indexed: {success}, Failed: {failed}")
 
 # ---- 2. Traitement du fichier opensky_data.json ----
-vk_df = spark.read.option("multiline", "true").json(vk_local_path)
+df_2 = spark.read.option("multiline", "true").json(json_file_path_2)
 
-states_cleaned = vk_df.select(
+states_cleaned = df_2.select(
     col("icao24").alias("icao24"),  # ICAO24
     col("origin_country").alias("origin_country"),  # Origin country
     from_unixtime(col("time_position")).alias("time_position_date"),  # Convertir en date type text sinon faire to_timestamp(col("time_position")).alias("time_position_date") pour type date
     col("longitude").alias("longitude"),  # Longitude
     col("latitude").alias("latitude"),  # Latitude
     concat_ws(",", col("latitude"), col("longitude")).alias("geopoint"),  # Créer une colonne GeoPoint
+    col("altitude").alias("altitude"),
+    col("on_ground").alias("on_ground"),
+    col("velocity").alias("velocity"),
+    col("heading").alias("heading"),
+    col("vertical_rate").alias("vertical_rate"),
+    col("squawk").alias("squawk"),
     date_format(from_unixtime(col("time_position")), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").alias("timestamp")  # Colonne compatible Elasticsearch
 )
 
@@ -241,19 +237,25 @@ states_cleaned = states_cleaned.withColumn("unique_id", generate_uuid_udf())
 
 # Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont NULL
 valid_states_cleaned = states_cleaned.filter(
-    (col("icao24").isNotNull()) &   # Vérifie la latitude de départ
-    (col("origin_country").isNotNull()) &  # Vérifie la longitude de départ
-    (col("time_position_date").isNotNull()) &     # Vérifie la latitude d'arrivée
-    (col("longitude").isNotNull()) &   # Vérifie la latitude de départ
-    (col("latitude").isNotNull()) &  # Vérifie la longitude de départ
-    (col("geopoint").isNotNull()) &      # Vérifie la latitude d'arrivée
+    (col("icao24").isNotNull()) &   
+    (col("origin_country").isNotNull()) &
+    (col("time_position_date").isNotNull()) &     
+    (col("longitude").isNotNull()) &  
+    (col("latitude").isNotNull()) &  
+    (col("geopoint").isNotNull()) &      
+    (col("altitude").isNotNull()) &
+    (col("on_ground") == "false") &
+    (col("velocity").isNotNull()) &
+    (col("heading").isNotNull()) &
+    (col("vertical_rate").isNotNull()) &
+    (col("squawk").isNotNull()) &
     (col("timestamp").isNotNull())
 )
 
 # Afficher les lignes validées avant l'indexation
 valid_states_cleaned.show(5)
 
-index_name_2 = "opensky_data_0_2701_index" 
+index_name_2 = "viken_khatch_m2i_cdsd_bloc1_opensky"
 mapping_2 = {
     "mappings": {
         "properties": {
@@ -275,22 +277,88 @@ def generate_bulk_data_2(row):
         "_index": index_name_2,
         "_id": row.unique_id,
         "_source": {
-            "icao24": row.icao24,       #"flight_status": row.flight_status,
+            "icao24": row.icao24,       
             "origin_country": row.origin_country,
             "time_position_date": row.time_position_date,
             "longitude": row.longitude,
             "latitude": row.latitude,
             "geopoint": row.geopoint,
+            "altitude": row.altitude,
+            "on_ground": row.on_ground,
+            "velocity": row.velocity,
+            "heading": row.heading,
+            "vertical_rate": row.vertical_rate,
+            "squawk": row.squawk,           
             "timestamp": row.timestamp
         }
     }
     return action
-
+    
 # Convertir les données valides en format bulk pour Elasticsearch
 es_bulk_data_2 = valid_states_cleaned.rdd.map(generate_bulk_data_2).collect()
 
 # Envoyer les données à Elasticsearch via bulk
 success, failed = bulk(es, es_bulk_data_2)
+print(f"Successfully indexed: {success}, Failed: {failed}")
+
+
+# ---- 3. Traitement du fichier skytrax_data.json ----
+df_3 = spark.read.option("multiline", "true").json(json_file_path_3)
+
+# Fonction pour obtenir la date actuelle au format ISO 8601
+def get_current_datetime():
+    return datetime.datetime.now().isoformat()
+
+airlines_cleaned = df_3.select(
+    col("Airline").alias("airline"), 
+    col("Stars").alias("stars")
+)
+
+# Ajouter un UUID unique
+generate_uuid_udf = udf(generate_uuid, StringType())
+airlines_cleaned = airlines_cleaned.withColumn("unique_id", generate_uuid_udf())
+
+# Ajouter la colonne "indexed_at" avec la date actuelle
+indexed_at_udf = udf(get_current_datetime, StringType())
+airlines_cleaned = airlines_cleaned.withColumn("indexed_at", indexed_at_udf())
+
+# Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont NULL
+valid_airlines_cleaned = airlines_cleaned.filter(
+    (col("airline").isNotNull()) &  
+    (col("stars").isNotNull())
+)
+
+# Afficher les lignes validées avant l'indexation
+valid_airlines_cleaned.show(5)
+
+# Configurer Elasticsearch  
+index_name_3 = "viken_khatch_m2i_cdsd_bloc1_skytrax"
+
+if not es.indices.exists(index=index_name_3):
+    es.indices.create(index=index_name_3)
+    print(f"Index {index_name_3} created.")
+else:
+    print(f"Index {index_name_3} already exists.")
+
+# Préparer et envoyer les données à Elasticsearch
+def generate_bulk_data_3(row):
+    action = {
+        "_op_type": "index",
+        "_index": index_name_3,
+        "_id": row.unique_id,
+        "_source": {
+            "airline": row.airline,              
+            "stars": row.stars,
+            "indexed_at": row.indexed_at  # Ajouter la date d'indexation
+        }
+    }
+    return action
+    
+# Convertir les données valides en format bulk pour Elasticsearch
+es_bulk_data_3 = valid_airlines_cleaned.rdd.map(generate_bulk_data_3).collect()
+
+# Envoyer les données à Elasticsearch via bulk
+success, failed = bulk(es, es_bulk_data_3)
 print(f"Successfully indexed: {success}, Failed: {failed}")
 
 # Stop Spark session
