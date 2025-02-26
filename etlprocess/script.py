@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, explode, to_timestamp, hour, dayofweek, month, year, current_timestamp, unix_timestamp, count, lit, row_number, date_format, udf, concat_ws, from_unixtime
+from pyspark.sql.functions import col, explode, to_timestamp, hour, dayofweek, month, year, current_timestamp, unix_timestamp, count, lit, row_number, date_format, udf, concat_ws, from_unixtime, round
 from pyspark.sql.window import Window
 import boto3
 import json
@@ -117,9 +117,24 @@ flights_with_coords = flights_with_coords.withColumn("departure_day", dayofweek(
 flights_with_coords = flights_with_coords.withColumn("departure_hour", hour("departure_scheduled")) \
        .withColumn("arrival_hour", hour("arrival_scheduled"))
 
-# Calculer la durée du vol en minutes
-flights_with_coords = flights_with_coords.withColumn("flight_duration_minutes", 
-                   (col("arrival_scheduled").cast("long") - col("departure_scheduled").cast("long")) / 60)
+# Extraire la durée du vol
+
+# Convertir en secondes UNIX
+flights_with_coords = flights_with_coords.withColumn("departure_unix", unix_timestamp("departure_scheduled"))
+flights_with_coords = flights_with_coords.withColumn("arrival_unix", unix_timestamp("arrival_scheduled"))
+
+# Calculer la durée du vol en heures
+# flights_with_coords = flights_with_coords.withColumn("flight_duration_hours", (col("arrival_unix") - col("departure_unix")) / 3600)
+
+# Calculer la durée du vol en heures et l'arrondir à 1 chiffre après la virgule
+flights_with_coords = flights_with_coords.withColumn(
+    "flight_duration_hours", 
+    round((col("arrival_unix") - col("departure_unix")) / 3600, 1)
+)
+
+
+# Afficher le résultat
+flights_with_coords.select("flight_duration_hours").show()
 
 # Générer un UUID unique pour chaque ligne
 def generate_uuid():
@@ -146,9 +161,11 @@ valid_flights = flights_with_coords.filter(
     (col("departure_iata").isNotNull()) &       
     (col("arrival_iata").isNotNull()) &           
     (col("departure_scheduled").isNotNull()) &
+    (col("departure_unix").isNotNull()) &
     (col("departure_airport").isNotNull()) &
     (col("departure_timezone").isNotNull()) &
     (col("arrival_scheduled").isNotNull()) &
+    (col("arrival_unix").isNotNull()) &
     (col("arrival_airport").isNotNull()) &
     (col("arrival_timezone").isNotNull()) &
     (col("flight_number").isNotNull()) &
@@ -157,13 +174,13 @@ valid_flights = flights_with_coords.filter(
     (col("arrival_day").isNotNull()) &
     (col("departure_hour").isNotNull()) &
     (col("arrival_hour").isNotNull()) &
-    (col("flight_duration_minutes").isNotNull()) &
-    (col("flight_duration_minutes") > 0)
+    (col("flight_duration_hours").isNotNull()) &
+    (col("flight_duration_hours") > 0)
 )
 
 # Configurer Elasticsearch
 es = Elasticsearch(["http://172.17.0.1:9200"])   
-index_name = "viken_khatch_m2i_cdsd_bloc1_aviationstack"
+index_name = "viken_khatcherian_m2i_cdsd_bloc1_aviationstack"
 mapping = {
     "mappings": {
         "properties": {
@@ -184,7 +201,7 @@ def generate_bulk_data(row):
     action = {
         "_op_type": "index",
         "_index": index_name,
-        "_id": row.unique_id,
+        "_id": f"{row.flight_number}_{row.flight_date}_{row.departure_hour}",
         "_source": {
             "flight_date": row.flight_date,      
             "flight_number": row.flight_number,
@@ -198,7 +215,7 @@ def generate_bulk_data(row):
             "arrival_scheduled": row.arrival_scheduled,
             "departure_hour": row.departure_hour,
             "arrival_hour" : row.arrival_hour,
-            "flight_duration_minutes": row.flight_duration_minutes,  
+            "flight_duration_hours": row.flight_duration_hours,  
             "departure_timezone": row.departure_timezone, 
             "arrival_timezone": row.arrival_timezone   
         }
@@ -255,7 +272,7 @@ valid_states_cleaned = states_cleaned.filter(
 # Afficher les lignes validées avant l'indexation
 valid_states_cleaned.show(5)
 
-index_name_2 = "viken_khatch_m2i_cdsd_bloc1_opensky"
+index_name_2 = "viken_khatcherian_m2i_cdsd_bloc1_opensky"
 mapping_2 = {
     "mappings": {
         "properties": {
@@ -275,7 +292,7 @@ def generate_bulk_data_2(row):
     action = {
         "_op_type": "index",
         "_index": index_name_2,
-        "_id": row.unique_id,
+        "_id": f"{row.icao24}_{row.timestamp}",
         "_source": {
             "icao24": row.icao24,       
             "origin_country": row.origin_country,
@@ -332,7 +349,7 @@ valid_airlines_cleaned = airlines_cleaned.filter(
 valid_airlines_cleaned.show(5)
 
 # Configurer Elasticsearch  
-index_name_3 = "viken_khatch_m2i_cdsd_bloc1_skytrax"
+index_name_3 = "viken_khatcherian_m2i_cdsd_bloc1_skytrax_stars"
 
 if not es.indices.exists(index=index_name_3):
     es.indices.create(index=index_name_3)
@@ -342,16 +359,21 @@ else:
 
 # Préparer et envoyer les données à Elasticsearch
 def generate_bulk_data_3(row):
+    # Utiliser l'airline et stars comme ID
+    _id = f"{row.airline}_{row.stars}"
+    
     action = {
-        "_op_type": "index",
+        "_op_type": "update",  # Utiliser "update" pour mettre à jour si le document existe
         "_index": index_name_3,
-        "_id": row.unique_id,
-        "_source": {
-            "airline": row.airline,              
+        "_id": _id,  # Utiliser l'ID unique basé sur la compagnie et les étoiles
+        "doc": {  # Mettre à jour le document existant
+            "airline": row.airline,
             "stars": row.stars,
             "indexed_at": row.indexed_at  # Ajouter la date d'indexation
-        }
+        },
+        "doc_as_upsert": True  # Si le document n'existe pas, l'insérer
     }
+    
     return action
     
 # Convertir les données valides en format bulk pour Elasticsearch
@@ -363,3 +385,4 @@ print(f"Successfully indexed: {success}, Failed: {failed}")
 
 # Stop Spark session
 spark.stop()
+
