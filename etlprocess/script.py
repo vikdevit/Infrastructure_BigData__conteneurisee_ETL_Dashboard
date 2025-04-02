@@ -6,12 +6,12 @@ import json
 import uuid
 from pyspark.sql.types import StringType
 
-import datetime  # Ajoutez cette ligne pour importer le module datetime
+import datetime  
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-# Configurer l'accès à LocalStack via boto3
+# Configurer l'accès à Localstack via boto3
 s3_client = boto3.client('s3',
                          endpoint_url='http://172.17.0.1:4566',
                          aws_access_key_id='test',
@@ -21,7 +21,7 @@ s3_client = boto3.client('s3',
 # Téléchargement du fichier JSON depuis le bucket S3 simulé
 bucket_name_1 = 'aviationstack'
 json_file_key_1 = 'aviation-data.json'  # Nom du fichier dans le bucket S3 (pas de répertoire)
-json_file_path_1 = '/app/aviation-data.json'  # Chemin local dans le conteneur Docker"""
+json_file_path_1 = '/app/aviation-data.json'  # Chemin local dans le conteneur Docker
 
 bucket_name_2 = 'openskytrax'
 json_file_key_2 = 'opensky_data.json'
@@ -123,15 +123,11 @@ flights_with_coords = flights_with_coords.withColumn("departure_hour", hour("dep
 flights_with_coords = flights_with_coords.withColumn("departure_unix", unix_timestamp("departure_scheduled"))
 flights_with_coords = flights_with_coords.withColumn("arrival_unix", unix_timestamp("arrival_scheduled"))
 
-# Calculer la durée du vol en heures
-# flights_with_coords = flights_with_coords.withColumn("flight_duration_hours", (col("arrival_unix") - col("departure_unix")) / 3600)
-
 # Calculer la durée du vol en heures et l'arrondir à 1 chiffre après la virgule
 flights_with_coords = flights_with_coords.withColumn(
     "flight_duration_hours", 
     round((col("arrival_unix") - col("departure_unix")) / 3600, 1)
 )
-
 
 # Afficher le résultat
 flights_with_coords.select("flight_duration_hours").show()
@@ -142,12 +138,12 @@ def generate_uuid():
 generate_uuid_udf = udf(generate_uuid, StringType())
 flights_with_coords = flights_with_coords.withColumn("unique_id", generate_uuid_udf())
 
-# **Maintenant, formater les dates après toutes les transformations**
+# Formater les dates après toutes les transformations
 flights_with_coords = flights_with_coords.withColumn("departure_scheduled", date_format("departure_scheduled", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"))
 flights_with_coords = flights_with_coords.withColumn("arrival_scheduled", date_format("arrival_scheduled", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"))
 flights_with_coords = flights_with_coords.withColumn("flight_date", date_format("flight_date", "yyyy-MM-dd"))
 
-# Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont NULL
+# Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont nulles
 valid_flights = flights_with_coords.filter(
     (col("departure_latitude").isNotNull()) &   
     (col("departure_longitude").isNotNull()) & 
@@ -229,12 +225,12 @@ es_bulk_data = valid_flights.rdd.map(generate_bulk_data).collect()
 success, failed = bulk(es, es_bulk_data)
 print(f"Successfully indexed: {success}, Failed: {failed}")
 
-# ---- 2. Traitement du fichier opensky_data.json ----
+# ---- Traitement du fichier opensky_data.json ----
 df_2 = spark.read.option("multiline", "true").json(json_file_path_2)
 
 states_cleaned = df_2.select(
-    col("icao24").alias("icao24"),  # ICAO24
-    col("origin_country").alias("origin_country"),  # Origin country
+    col("icao24").alias("icao24"),  
+    col("origin_country").alias("origin_country"),  
     from_unixtime(col("time_position")).alias("time_position_date"),  # Convertir en date type text sinon faire to_timestamp(col("time_position")).alias("time_position_date") pour type date
     col("longitude").alias("longitude"),  # Longitude
     col("latitude").alias("latitude"),  # Latitude
@@ -252,7 +248,7 @@ states_cleaned = df_2.select(
 generate_uuid_udf = udf(generate_uuid, StringType())
 states_cleaned = states_cleaned.withColumn("unique_id", generate_uuid_udf())
 
-# Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont NULL
+# Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont nulles
 valid_states_cleaned = states_cleaned.filter(
     (col("icao24").isNotNull()) &   
     (col("origin_country").isNotNull()) &
@@ -318,8 +314,7 @@ es_bulk_data_2 = valid_states_cleaned.rdd.map(generate_bulk_data_2).collect()
 success, failed = bulk(es, es_bulk_data_2)
 print(f"Successfully indexed: {success}, Failed: {failed}")
 
-
-# ---- 3. Traitement du fichier skytrax_data.json ----
+# ---- Traitement du fichier skytrax_data.json ----
 df_3 = spark.read.option("multiline", "true").json(json_file_path_3)
 
 # Fonction pour obtenir la date actuelle au format ISO 8601
@@ -339,7 +334,7 @@ airlines_cleaned = airlines_cleaned.withColumn("unique_id", generate_uuid_udf())
 indexed_at_udf = udf(get_current_datetime, StringType())
 airlines_cleaned = airlines_cleaned.withColumn("indexed_at", indexed_at_udf())
 
-# Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont NULL
+# Filtrer les lignes où les géopoints ou d'autres colonnes critiques sont nulles
 valid_airlines_cleaned = airlines_cleaned.filter(
     (col("airline").isNotNull()) &  
     (col("stars").isNotNull())
@@ -383,6 +378,6 @@ es_bulk_data_3 = valid_airlines_cleaned.rdd.map(generate_bulk_data_3).collect()
 success, failed = bulk(es, es_bulk_data_3)
 print(f"Successfully indexed: {success}, Failed: {failed}")
 
-# Stop Spark session
+# Fermer la session Spark
 spark.stop()
 
