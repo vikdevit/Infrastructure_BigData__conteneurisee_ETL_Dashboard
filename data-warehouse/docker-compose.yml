@@ -10,7 +10,7 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data  # Volume persistant pour les données d'Elasticsearch
+      - elasticsearch_data:/usr/share/elasticsearch/data  # Montage d'un volume pour persister les données d'Elasticsearch
     ports:
       - "9200:9200"
     networks:
@@ -24,7 +24,7 @@ services:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200  # Connexion à Elasticsearch
       - xpack.security.enabled=false  # Désactive la sécurité dans Kibana (pas de mot de passe)
     volumes:
-      - kibana_data:/usr/share/kibana/data  # Volume persistant pour les données de Kibana (dashboards, visualisations, etc.)
+      - kibana_data:/usr/share/kibana/data  # Montage d'un volume pour persister les données de Kibana (dashboards, visualisations, etc.)
     ports:
       - "5601:5601"
     depends_on:
