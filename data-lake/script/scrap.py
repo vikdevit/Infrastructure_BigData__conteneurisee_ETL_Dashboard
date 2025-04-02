@@ -4,11 +4,11 @@ from confluent_kafka import Producer, Consumer, KafkaException, KafkaError
 import boto3
 import json
 
-# Configuration du Kafka
+# Configuration de Kafka
 KAFKA_TOPIC = 'aviation_data'
 KAFKA_BROKER = 'kafka:9092'
 
-# Configuration de S3 (via LocalStack)
+# Configuration de S3 (via Localstack)
 S3_BUCKET_NAME = 'openskytrax'
 S3_ENDPOINT = 'http://172.17.0.1:4566'
 s3 = boto3.client('s3', endpoint_url=S3_ENDPOINT, aws_access_key_id='test', aws_secret_access_key='test', region_name='us-east-1')
@@ -22,7 +22,6 @@ def scrape_skytrax():
         table = soup.find('table', {'id': 'tablepress-1'})
         if table:
             tbody = table.find('tbody')
-
             if tbody:
                 rows = tbody.find_all('tr')
                 resultats = []
@@ -51,7 +50,7 @@ def fetch_opensky_data():
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        # Limite à 50 premiers états
+        # Limiter aux 50 premiers états
         states = data.get("states", [])[:50]  # On prend seulement les 50 premiers états
         resultats = []
         for state in states:
@@ -109,15 +108,13 @@ def consume_from_kafka_and_send_to_s3(consumer):
                 source = msg.key().decode('utf-8')  # Récupérer la source (Skytrax ou OpenSky)
                 data = json.loads(msg.value().decode('utf-8'))
                 print(f"Message reçu de {source}: {json.dumps(data, indent=4)}")
-
                 try:
                     if source == "Skytrax":
                         key = "skytrax_data.json"
                     elif source == "OpenSky":
                         key = "opensky_data.json"
                     else:
-                        key = f"unknown_data.json"
-                    
+                        key = f"unknown_data.json"                    
                     # Sauvegarde dans S3
                     s3.put_object(Bucket=S3_BUCKET_NAME, Key=key, Body=json.dumps(data))
                     print(f"Données sauvegardées avec succès dans le bucket {S3_BUCKET_NAME} avec la clé {key}")
@@ -153,7 +150,6 @@ if __name__ == "__main__":
         # Consommer les données depuis Kafka et les envoyer vers S3
         print("Consommation des données depuis Kafka et envoi vers S3...")
         consume_from_kafka_and_send_to_s3(consumer)
-
     except Exception as main_error:
         print(f"Erreur dans le script principal : {main_error}")
 
