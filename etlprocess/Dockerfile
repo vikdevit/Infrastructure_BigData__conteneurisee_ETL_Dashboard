@@ -11,7 +11,7 @@ RUN pip install pyspark boto3 elasticsearch
 # Copier le fichier des coordonnées des aéroports
 COPY airports.dat /app/airports.dat
 
-# Copier votre script PySpark dans le conteneur
+# Copier le script PySpark dans le conteneur
 COPY script.py /app/script.py
 
 # Exécuter le script Python (PySpark) lors du démarrage du conteneur
